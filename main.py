@@ -10,6 +10,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+import urllib.parse
 
 import astrbot.api.message_components as Comp
 from astrbot.api import AstrBotConfig, logger
@@ -21,7 +22,7 @@ from astrbot.api.star import Context, Star, register
     "newapi_admin",
     "渡鸦",
     "通过 API Token 管理 NewAPI 实例 — LLM 工具调用 + 分组管理",
-    "1.1.0",
+    "1.2.0",
 )
 class NewAPIAdmin(Star):
     """NewAPI 管理助手插件"""
@@ -196,13 +197,72 @@ class NewAPIAdmin(Star):
             f"状态: {'正常' if u.get('status', 1) == 1 else '已禁用'}"
         )
 
-    @filter.llm_tool(name="newapi_search_user")
-    async def tool_search_user(self, event: AstrMessageEvent, keyword: str):
-        '''按用户名关键词搜索 NewAPI 用户。返回结果包含用户的 NewAPI ID（#数字），后续操作请使用这个 ID。注意：不要用 Discord ID 搜索，这里只接受用户名关键词。
+
+    @filter.llm_tool(name="newapi_resolve_discord_user")
+    async def tool_resolve_discord_user(self, event: AstrMessageEvent, discord_user_id: str):
+        '''解析 Discord 用户 ID，获取其 Discord 用户名，然后在 NewAPI 中搜索对应账户。当消息中出现 Discord 提及（如 <@123456>）时，必须先用此工具查找该用户的 NewAPI 账户，不要直接把 Discord ID 当作 NewAPI 用户 ID 使用。
 
         Args:
-            keyword(string): 用户名关键词（如 "tizenry", "dadongbei"），不要传入 Discord ID
+            discord_user_id(string): Discord 用户 ID（纯数字，从 <@123456> 中提取）
         '''
+        try:
+            # 清理 ID，去掉 <@ > ! 等字符
+            clean_id = discord_user_id.strip().replace('<@', '').replace('>', '').replace('!', '')
+            uid = int(clean_id)
+
+            # 通过 AstrBot 的 Discord 平台获取用户信息
+            discord_user = None
+            try:
+                bot = getattr(event, 'bot', None)
+                if bot:
+                    client = getattr(bot, 'client', None)
+                    if client:
+                        discord_user = client.get_user(uid)
+                        if not discord_user:
+                            discord_user = await client.fetch_user(uid)
+            except Exception as e:
+                logger.warning(f"[NewAPIAdmin] Discord API 调用失败: {e}")
+
+            if discord_user:
+                display_name = discord_user.display_name or discord_user.name
+                # 用 Discord 用户名在 NewAPI 中搜索
+                resp = self._get(f"/api/user/search?keyword={urllib.parse.quote(display_name)}&p=0&size=10")
+                if resp.get("success"):
+                    items = resp.get("data", {}).get("items", [])
+                    if items:
+                        lines = [f"Discord 用户 {display_name} (ID: {uid}) 对应的 NewAPI 账户:"]
+                        for u in items[:5]:
+                            remain = u.get("quota", 0) - u.get("used_quota", 0)
+                            lines.append(
+                                f"  #{u['id']} {u.get('username', '?')} "
+                                f"| 分组:{u.get('group', 'default')} "
+                                f"| 余额:{self._fmt_quota(remain)} "
+                                f"| 请求:{u.get('request_count', 0)}"
+                            )
+                        return "\n".join(lines)
+                    else:
+                        return f"Discord 用户 {display_name} (ID: {uid}) 在 NewAPI 中未找到对应账户。该用户可能还没有注册 NewAPI。"
+                else:
+                    return f"NewAPI 搜索失败: {resp.get('message')}"
+            else:
+                return f"无法获取 Discord 用户信息 (ID: {uid})。请让用户告诉你他的 NewAPI 用户名，再用 newapi_search_user 搜索。"
+        except ValueError:
+            return f"无效的 Discord 用户 ID: {discord_user_id}"
+        except Exception as e:
+            return f"解析失败: {e}"
+
+
+    @filter.llm_tool(name="newapi_search_user")
+    async def tool_search_user(self, event: AstrMessageEvent, keyword: str):
+        '''按用户名关键词搜索 NewAPI 用户。如果关键词是纯数字且超过5位，说明你拿到的是 Discord ID，应该改用 newapi_resolve_discord_user 工具。
+
+        Args:
+            keyword(string): NewAPI 用户名关键词（如 "tizenry", "dadongbei"），不要传入 Discord ID
+        '''
+        # 防呆：如果关键词是长数字（Discord ID），提示使用正确的工具
+        if keyword.isdigit() and len(keyword) > 5:
+            return f"你搜索的「{keyword}」看起来是 Discord 用户 ID，不是 NewAPI 用户名。请使用 newapi_resolve_discord_user 工具来解析 Discord ID。"
+
         resp = self._get(f"/api/user/search?keyword={keyword}&p=0&size=10")
         if not resp.get("success"):
             return f"搜索失败: {resp.get('message')}"
@@ -336,10 +396,10 @@ class NewAPIAdmin(Star):
 
     @filter.llm_tool(name="newapi_set_user_group")
     async def tool_set_group(self, event: AstrMessageEvent, user_id: int, group_name: str):
-        '''修改指定用户的分组。仅限 bot 主人使用。注意：user_id 是 NewAPI 系统内部的数字 ID（如 1, 2, 3），不是 Discord ID。如果不确定 ID，请先用 newapi_search_user 搜索。
+        '''修改指定用户的分组。仅限 bot 主人使用。user_id 必须是 NewAPI 内部 ID（通常是个位数）。如果只有 Discord ID，请先用 newapi_resolve_discord_user 查找对应的 NewAPI ID。
 
         Args:
-            user_id(int): NewAPI 系统内部用户 ID（数字，如 1, 2, 3），不是 Discord ID
+            user_id(int): NewAPI 系统内部用户 ID（通常是个位数，如 1, 2, 3）
             group_name(string): 分组名称，如 default, vip, svip, 雏鸟 等
         '''
         # 权限检查
@@ -347,9 +407,9 @@ class NewAPIAdmin(Star):
             sender_id = str(event.message_sender.get_id())
             return f"权限不足：仅 bot 主人可以修改用户分组。你的平台 ID: {sender_id}"
 
-        # 防呆：如果 user_id 超过 10000，很可能是 Discord ID 而不是 NewAPI ID
+        # 防呆：如果 user_id 太大，很可能是 Discord ID
         if user_id > 10000:
-            return f"❌ user_id={user_id} 看起来不像 NewAPI 用户 ID（通常是个位数或小数字）。请先用 newapi_search_user 通过用户名搜索，获取正确的 NewAPI ID。"
+            return f"❌ user_id={user_id} 不是有效的 NewAPI 用户 ID。你可能拿到了 Discord ID，请使用 newapi_resolve_discord_user 工具先解析。"
 
         resp = self._put("/api/user/", {"id": user_id, "group": group_name})
         if resp.get("success"):
