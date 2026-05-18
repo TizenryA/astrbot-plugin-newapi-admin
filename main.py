@@ -43,6 +43,7 @@ class NewAPIAdmin(Star):
     def _is_owner(self, event: AstrMessageEvent) -> bool:
         """检查是否是 bot 主人（通过 Discord ID）"""
         sender_id = str(event.message_sender.get_id())
+        logger.info(f"[NewAPIAdmin] _is_owner check: sender={sender_id}, expected={self.owner_discord_id}, match={sender_id == self.owner_discord_id}")
         return sender_id == self.owner_discord_id
 
     def _is_admin(self, event: AstrMessageEvent) -> bool:
@@ -343,7 +344,12 @@ class NewAPIAdmin(Star):
         '''
         # 权限检查
         if not self._is_owner(event):
-            return "权限不足：仅 bot 主人可以修改用户分组"
+            sender_id = str(event.message_sender.get_id())
+            return f"权限不足：仅 bot 主人可以修改用户分组。你的平台 ID: {sender_id}"
+
+        # 防呆：如果 user_id 超过 10000，很可能是 Discord ID 而不是 NewAPI ID
+        if user_id > 10000:
+            return f"❌ user_id={user_id} 看起来不像 NewAPI 用户 ID（通常是个位数或小数字）。请先用 newapi_search_user 通过用户名搜索，获取正确的 NewAPI ID。"
 
         resp = self._put("/api/user/", {"id": user_id, "group": group_name})
         if resp.get("success"):
@@ -366,7 +372,11 @@ class NewAPIAdmin(Star):
             yield event.plain_result("❌ 权限不足：仅 bot 主人可以使用此命令")
             return
         if user_id <= 0 or not group_name:
-            yield event.plain_result("用法: ngroup <用户ID> <分组名>\n示例: ngroup 123 雏鸟")
+            yield event.plain_result("用法: ngroup <NewAPI用户ID> <分组名>\n示例: ngroup 123 雏鸟\n\n注意：用户ID是 NewAPI 内部 ID（数字），不是 Discord ID。用 nsearch <用户名> 查找。")
+            return
+
+        if user_id > 10000:
+            yield event.plain_result(f"❌ user_id={user_id} 看起来不像 NewAPI 用户 ID。\n请用 nsearch <用户名> 搜索获取正确的 ID。")
             return
 
         resp = self._put("/api/user/", {"id": user_id, "group": group_name})
