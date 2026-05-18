@@ -20,7 +20,7 @@ from astrbot.api.star import Context, Star, register
     "newapi_admin",
     "渡鸦",
     "通过 API Token 管理 NewAPI 实例 — 查询用户、渠道、日志、余额、系统状态",
-    "1.0.0",
+    "1.0.1",
 )
 class NewAPIAdmin(Star):
     """NewAPI 管理助手插件"""
@@ -33,7 +33,7 @@ class NewAPIAdmin(Star):
         self.quota_per_usd: int = int(config.get("quota_per_usd", 500000))
         self.page_size: int = int(config.get("page_size", 10))
         self.timeout: int = int(config.get("request_timeout", 15))
-        logger.info(f"[NewAPIAdmin] 已加载，目标: {self.base_url}")
+        logger.info(f"[NewAPIAdmin] v1.0.1 已加载，目标: {self.base_url}, 用户ID: {self.admin_user_id}")
 
     # ── HTTP 工具 ──────────────────────────────────────────────
 
@@ -54,10 +54,29 @@ class NewAPIAdmin(Star):
             with urlopen(req, timeout=self.timeout) as resp:
                 return json.loads(resp.read())
         except HTTPError as e:
-            return {"success": False, "message": f"HTTP {e.code}: {e.reason}"}
+            body = ""
+            try:
+                body = e.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            # 尝试从 body 提取更详细的错误信息
+            detail = ""
+            if body:
+                try:
+                    err_json = json.loads(body)
+                    detail = err_json.get("message", body[:200])
+                except Exception:
+                    detail = body[:200]
+            msg = f"HTTP {e.code}: {e.reason}"
+            if detail:
+                msg += f" — {detail}"
+            logger.warning(f"[NewAPIAdmin] GET {path} 失败: {msg}")
+            return {"success": False, "message": msg}
         except URLError as e:
+            logger.warning(f"[NewAPIAdmin] GET {path} 连接失败: {e.reason}")
             return {"success": False, "message": f"连接失败: {e.reason}"}
         except Exception as e:
+            logger.warning(f"[NewAPIAdmin] GET {path} 异常: {e}")
             return {"success": False, "message": str(e)}
 
     def _put(self, path: str, data: Dict) -> Dict[str, Any]:
@@ -71,7 +90,23 @@ class NewAPIAdmin(Star):
             with urlopen(req, timeout=self.timeout) as resp:
                 return json.loads(resp.read())
         except HTTPError as e:
-            return {"success": False, "message": f"HTTP {e.code}: {e.reason}"}
+            body_text = ""
+            try:
+                body_text = e.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            detail = ""
+            if body_text:
+                try:
+                    err_json = json.loads(body_text)
+                    detail = err_json.get("message", body_text[:200])
+                except Exception:
+                    detail = body_text[:200]
+            msg = f"HTTP {e.code}: {e.reason}"
+            if detail:
+                msg += f" — {detail}"
+            logger.warning(f"[NewAPIAdmin] PUT {path} 失败: {msg}")
+            return {"success": False, "message": msg}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -411,7 +446,7 @@ class NewAPIAdmin(Star):
     async def cmd_help(self, event: AstrMessageEvent):
         """显示帮助信息"""
         lines = [
-            "🔧 NewAPI 管理助手 v1.0.0",
+            "🔧 NewAPI 管理助手 v1.0.1",
             "━━━━━━━━━━━━━━━━━━━━",
             "nstatus — 系统状态",
             "nself — 管理员信息",
