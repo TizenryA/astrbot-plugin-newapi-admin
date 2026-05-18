@@ -1,7 +1,7 @@
 name: astrbot_plugin_newapi_admin
 display_name: NewAPI 管理助手
 desc: "通过 API Token 管理 NewAPI 实例 — LLM 工具调用 + 分组管理"
-version: 1.2.0
+version: 1.2.1
 author: 渡鸦
 astrbot_version: ">=4.16.0"
 repo: https://github.com/TizenryA/astrbot-plugin-newapi-admin

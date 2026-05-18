@@ -22,7 +22,7 @@ from astrbot.api.star import Context, Star, register
     "newapi_admin",
     "渡鸦",
     "通过 API Token 管理 NewAPI 实例 — LLM 工具调用 + 分组管理",
-    "1.2.0",
+    "1.2.1",
 )
 class NewAPIAdmin(Star):
     """NewAPI 管理助手插件"""
@@ -43,7 +43,7 @@ class NewAPIAdmin(Star):
 
     def _is_owner(self, event: AstrMessageEvent) -> bool:
         """检查是否是 bot 主人（通过 Discord ID）"""
-        sender_id = str(event.message_sender.get_id())
+        sender_id = str(event.get_sender_id())
         logger.info(f"[NewAPIAdmin] _is_owner check: sender={sender_id}, expected={self.owner_discord_id}, match={sender_id == self.owner_discord_id}")
         return sender_id == self.owner_discord_id
 
@@ -51,8 +51,8 @@ class NewAPIAdmin(Star):
         """检查是否是管理员（配置中的 admin_users 或 bot 主人）"""
         if self._is_owner(event):
             return True
-        sender_id = str(event.message_sender.get_id())
-        username = event.message_sender.get_name()
+        sender_id = str(event.get_sender_id())
+        username = event.get_sender_name()
         admin_users = [str(uid) for uid in self.context.get_config().get("admin_users", [])]
         return sender_id in admin_users or username in admin_users
 
@@ -404,7 +404,7 @@ class NewAPIAdmin(Star):
         '''
         # 权限检查
         if not self._is_owner(event):
-            sender_id = str(event.message_sender.get_id())
+            sender_id = str(event.get_sender_id())
             return f"权限不足：仅 bot 主人可以修改用户分组。你的平台 ID: {sender_id}"
 
         # 防呆：如果 user_id 太大，很可能是 Discord ID
