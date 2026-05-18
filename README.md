@@ -41,6 +41,7 @@
 | `nredeem [页码]` | 兑换码、查兑换码 | 兑换码列表 |
 | `nban <用户ID>` | 禁用用户 | 禁用用户 |
 | `nunban <用户ID>` | 启用用户 | 启用用户 |
+| `nquota <ID> <额度> [模式]` | 改余额、设置额度 | 修改用户余额（仅限主人） |
 | `ngroup <ID> <分组名>` | 改分组 | 修改用户分组（仅限主人） |
 | `ngroups` | 分组列表 | 查看可用分组（仅限主人） |
 | `nhelp` | 管理帮助、n帮助 | 显示帮助 |
@@ -59,7 +60,8 @@
 | `newapi_channel_list` | 渠道列表 |
 | `newapi_token_list` | 令牌列表 |
 | `newapi_logs` | 查询日志 |
-| `newapi_set_user_group` | 修改用户分组（仅限主人） |
+| `newapi_set_user_balance` | 修改用户余额（仅限主人） |
+| `newapi_set_user_group` | 修改用户分组（仅限主人，自动验证分组存在） |
 
 **自然语言示例：**
 - "查一下用户123的余额"
@@ -88,4 +90,6 @@ New-Api-User: 1
 - 额度换算：500,000 单位 = $1 USD
 - 禁用/启用用户操作会立即生效，请谨慎使用
 - 分组管理使用 `PATCH /api/user/:id/group` 接口，只更新分组字段，不影响其他数据
-- `owner_discord_id` 控制分组管理权限，只有该 Discord 用户可以修改分组
+- 分组修改会自动验证分组是否存在，不存在时会提示可用分组列表
+- 余额修改使用 `POST /api/user/manage` 接口的 `add_quota` 功能
+- `owner_discord_id` 控制分组管理和余额管理权限，只有该 Discord 用户可以操作

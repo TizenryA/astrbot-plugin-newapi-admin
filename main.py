@@ -22,7 +22,7 @@ from astrbot.api.star import Context, Star, register
     "newapi_admin",
     "渡鸦",
     "通过 API Token 管理 NewAPI 实例 — LLM 工具调用 + 分组管理",
-    "1.3.0",
+    "1.4.0",
 )
 class NewAPIAdmin(Star):
     """NewAPI 管理助手插件"""
@@ -160,6 +160,37 @@ class NewAPIAdmin(Star):
 
     # ── 额度换算 ──────────────────────────────────────────────
 
+
+    def _post(self, path: str, data: Dict) -> Dict[str, Any]:
+        url = f"{self.base_url}{path}"
+        body = json.dumps(data).encode()
+        req = Request(url=url, data=body, method="POST")
+        for k, v in self._headers().items():
+            req.add_header(k, v)
+        try:
+            with urlopen(req, timeout=self.timeout) as resp:
+                return json.loads(resp.read())
+        except HTTPError as e:
+            body_text = ""
+            try:
+                body_text = e.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            detail = ""
+            if body_text:
+                try:
+                    err_json = json.loads(body_text)
+                    detail = err_json.get("message", body_text[:200])
+                except Exception:
+                    detail = body_text[:200]
+            msg = f"HTTP {e.code}: {e.reason}"
+            if detail:
+                msg += f" — {detail}"
+            logger.warning(f"[NewAPIAdmin] POST {path} 失败: {msg}")
+            return {"success": False, "message": msg}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
     def _fmt_quota(self, quota: int) -> str:
         usd = quota / self.quota_per_usd
         if usd >= 1:
@@ -174,6 +205,36 @@ class NewAPIAdmin(Star):
         if tokens >= 1_000:
             return f"{tokens / 1_000:.1f}K"
         return str(tokens)
+
+
+    def _get_available_groups(self) -> list:
+        """获取可用分组列表"""
+        resp = self._get("/api/user/group")
+        if resp.get("success"):
+            return resp.get("data", [])
+        return []
+
+    def _find_closest_group(self, name: str, available: list) -> str:
+        """在可用分组中找最接近的匹配"""
+        if not available:
+            return name
+        # 精确匹配
+        if name in available:
+            return name
+        # 模糊匹配：包含关系
+        for g in available:
+            if name in g or g in name:
+                return g
+        # 简单相似度：计算公共字符数
+        best = None
+        best_score = 0
+        for g in available:
+            common = sum(1 for c in name if c in g)
+            score = common / max(len(name), len(g))
+            if score > best_score:
+                best_score = score
+                best = g
+        return best if best_score > 0.3 else name
 
     def _ts_to_str(self, ts: int) -> str:
         if ts == 0:
@@ -450,6 +511,29 @@ class NewAPIAdmin(Star):
             username = user_resp["data"].get("username", "?")
             old_group = user_resp["data"].get("group", "default")
 
+        # 验证分组是否存在
+        available = self._get_available_groups()
+        if available:
+            matched = self._find_closest_group(group_name, available)
+            if matched != group_name:
+                return f"分组「{group_name}」不存在，最接近的是「{matched}」。可用分组: {', '.join(available)}"
+            if group_name not in available:
+                return f"分组「{group_name}」不存在。可用分组: {', '.join(available)}"
+            group_name = matched
+
+        # 验证分组是否存在
+        available = self._get_available_groups()
+        if available:
+            matched = self._find_closest_group(group_name, available)
+            if matched != group_name:
+                yield event.plain_result(f"❌ 分组「{group_name}」不存在，最接近的是「{matched}」
+可用分组: {', '.join(available)}")
+                return
+            if group_name not in available:
+                yield event.plain_result(f"❌ 分组「{group_name}」不存在
+可用分组: {', '.join(available)}")
+                return
+
         # 使用 PATCH 接口只更新分组，不影响其他字段
         resp = self._patch(f"/api/user/{user_id}/group", {"group": group_name})
         if resp.get("success"):
@@ -459,6 +543,56 @@ class NewAPIAdmin(Star):
     # ═══════════════════════════════════════════════════════════
     # 命令：分组管理（仅限 bot 主人）
     # ═══════════════════════════════════════════════════════════
+
+
+    @filter.command("nquota", alias={"改余额", "设置额度"})
+    async def cmd_set_quota(self, event: AstrMessageEvent, user_id: int = 0, amount: int = 0, mode: str = "add"):
+        '''修改用户余额: nquota <用户ID> <额度> [add|subtract|override]'''
+        if not self._is_owner(event):
+            yield event.plain_result("❌ 权限不足：仅 bot 主人可以使用此命令")
+            return
+        if user_id <= 0 or amount <= 0:
+            yield event.plain_result(
+                "用法: nquota <用户ID> <额度> [模式]\n"
+                "模式: add(增加) subtract(减少) override(覆盖)\n"
+                "示例: nquota 5 1000000 add\n\n"
+                "额度换算: 500,000 = $1 USD"
+            )
+            return
+
+        if user_id > 10000:
+            yield event.plain_result(f"❌ user_id={user_id} 看起来不像 NewAPI 用户 ID。")
+            return
+
+        if mode not in ("add", "subtract", "override"):
+            yield event.plain_result("❌ 模式必须是 add/subtract/override")
+            return
+
+        # 查询用户信息
+        user_resp = self._get(f"/api/user/{user_id}")
+        username = "?"
+        old_quota = 0
+        if user_resp.get("success"):
+            username = user_resp["data"].get("username", "?")
+            old_quota = user_resp["data"].get("quota", 0) - user_resp["data"].get("used_quota", 0)
+
+        resp = self._post("/api/user/manage", {
+            "id": user_id,
+            "action": "add_quota",
+            "value": amount,
+            "mode": mode,
+        })
+        if resp.get("success"):
+            mode_text = {"add": "增加", "subtract": "减少", "override": "覆盖为"}[mode]
+            yield event.plain_result(
+                f"✅ 余额修改成功\n"
+                f"━━━━━━━━━━━━━━━━\n"
+                f"👤 用户: {username} (ID: {user_id})\n"
+                f"💰 原余额: {self._fmt_quota(old_quota)}\n"
+                f"📝 操作: {mode_text} {self._fmt_quota(amount)}"
+            )
+        else:
+            yield event.plain_result(f"❌ 修改失败: {resp.get('message')}")
 
     @filter.command("ngroup", alias={"改分组", "设置分组"})
     async def cmd_set_group(self, event: AstrMessageEvent, user_id: int = 0, group_name: str = ""):
@@ -482,6 +616,29 @@ class NewAPIAdmin(Star):
             username = user_resp["data"].get("username", "?")
             old_group = user_resp["data"].get("group", "default")
 
+        # 验证分组是否存在
+        available = self._get_available_groups()
+        if available:
+            matched = self._find_closest_group(group_name, available)
+            if matched != group_name:
+                return f"分组「{group_name}」不存在，最接近的是「{matched}」。可用分组: {', '.join(available)}"
+            if group_name not in available:
+                return f"分组「{group_name}」不存在。可用分组: {', '.join(available)}"
+            group_name = matched
+
+        # 验证分组是否存在
+        available = self._get_available_groups()
+        if available:
+            matched = self._find_closest_group(group_name, available)
+            if matched != group_name:
+                yield event.plain_result(f"❌ 分组「{group_name}」不存在，最接近的是「{matched}」
+可用分组: {', '.join(available)}")
+                return
+            if group_name not in available:
+                yield event.plain_result(f"❌ 分组「{group_name}」不存在
+可用分组: {', '.join(available)}")
+                return
+
         # 使用 PATCH 接口只更新分组，不影响其他字段
         resp = self._patch(f"/api/user/{user_id}/group", {"group": group_name})
         if resp.get("success"):
@@ -502,22 +659,56 @@ class NewAPIAdmin(Star):
             yield event.plain_result("❌ 权限不足")
             return
 
-        resp = self._get("/api/user/group")
-        if not resp.get("success"):
-            yield event.plain_result(f"❌ 查询失败: {resp.get('message')}")
-            return
-
-        groups = resp.get("data", {})
+        groups = self._get_available_groups()
         if not groups:
             yield event.plain_result("📭 没有配置分组")
             return
 
         lines = ["🏷 可用分组:"]
-        for name, info in groups.items():
-            ratio = info.get("ratio", 1) if isinstance(info, dict) else 1
-            desc = info.get("desc", "") if isinstance(info, dict) else ""
-            lines.append(f"  • {name} (倍率: {ratio}){' — ' + desc if desc else ''}")
+        for name in groups:
+            lines.append(f"  • {name}")
         yield event.plain_result("\n".join(lines))
+
+
+    @filter.llm_tool(name="newapi_set_user_balance")
+    async def tool_set_balance(self, event: AstrMessageEvent, user_id: int, amount: int, mode: str):
+        '''修改用户的余额（额度）。仅限 bot 主人使用。
+
+        Args:
+            user_id(int): NewAPI 用户 ID
+            amount(int): 额度数量（单位：quota，500000 = $1）
+            mode(string): 操作模式 - "add" 增加, "subtract" 减少, "override" 覆盖为指定值
+        '''
+        if not self._is_owner(event):
+            return "权限不足：仅 bot 主人可以修改用户余额"
+
+        if user_id > 10000:
+            return f"❌ user_id={user_id} 不是有效的 NewAPI 用户 ID。请使用 newapi_resolve_discord_user 先解析。"
+
+        if mode not in ("add", "subtract", "override"):
+            return f"❌ mode 必须是 add/subtract/override，收到的是 {mode}"
+
+        if amount < 0:
+            return "❌ amount 不能为负数"
+
+        # 查询用户信息
+        user_resp = self._get(f"/api/user/{user_id}")
+        username = "?"
+        old_quota = 0
+        if user_resp.get("success"):
+            username = user_resp["data"].get("username", "?")
+            old_quota = user_resp["data"].get("quota", 0) - user_resp["data"].get("used_quota", 0)
+
+        resp = self._post("/api/user/manage", {
+            "id": user_id,
+            "action": "add_quota",
+            "value": amount,
+            "mode": mode,
+        })
+        if resp.get("success"):
+            mode_text = {"add": "增加", "subtract": "减少", "override": "覆盖为"}[mode]
+            return f"✅ 用户 #{user_id} ({username}) 额度已{mode_text} {self._fmt_quota(amount)}（原余额: {self._fmt_quota(old_quota)}）"
+        return f"❌ 修改失败: {resp.get('message')}"
 
     # ═══════════════════════════════════════════════════════════
     # 传统命令（兼容旧版）
@@ -786,6 +977,9 @@ class NewAPIAdmin(Star):
             "  nredeem [页码] — 兑换码列表",
             "  nban <用户ID> — 禁用用户",
             "  nunban <用户ID> — 启用用户",
+            "━━━━━━━━━━━━━━━━━━━━",
+            "💰 余额管理 (仅限主人):",
+            "  nquota <ID> <额度> [模式] — 修改余额",
             "━━━━━━━━━━━━━━━━━━━━",
             "🏷 分组管理 (仅限主人):",
             "  ngroup <ID> <分组名> — 修改分组",
