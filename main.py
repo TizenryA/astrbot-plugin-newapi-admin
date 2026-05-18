@@ -22,7 +22,7 @@ from astrbot.api.star import Context, Star, register
     "newapi_admin",
     "渡鸦",
     "通过 API Token 管理 NewAPI 实例 — LLM 工具调用 + 分组管理",
-    "1.2.2",
+    "1.3.0",
 )
 class NewAPIAdmin(Star):
     """NewAPI 管理助手插件"""
@@ -126,6 +126,37 @@ class NewAPIAdmin(Star):
             return {"success": False, "message": msg}
         except Exception as e:
             return {"success": False, "message": str(e)}
+
+    def _patch(self, path: str, data: Dict) -> Dict[str, Any]:
+        url = f"{self.base_url}{path}"
+        body = json.dumps(data).encode()
+        req = Request(url=url, data=body, method="PATCH")
+        for k, v in self._headers().items():
+            req.add_header(k, v)
+        try:
+            with urlopen(req, timeout=self.timeout) as resp:
+                return json.loads(resp.read())
+        except HTTPError as e:
+            body_text = ""
+            try:
+                body_text = e.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            detail = ""
+            if body_text:
+                try:
+                    err_json = json.loads(body_text)
+                    detail = err_json.get("message", body_text[:200])
+                except Exception:
+                    detail = body_text[:200]
+            msg = f"HTTP {e.code}: {e.reason}"
+            if detail:
+                msg += f" — {detail}"
+            logger.warning(f"[NewAPIAdmin] PATCH {path} 失败: {msg}")
+            return {"success": False, "message": msg}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
 
     # ── 额度换算 ──────────────────────────────────────────────
 
@@ -411,23 +442,18 @@ class NewAPIAdmin(Star):
         if user_id > 10000:
             return f"❌ user_id={user_id} 不是有效的 NewAPI 用户 ID。你可能拿到了 Discord ID，请使用 newapi_resolve_discord_user 工具先解析。"
 
-        # 先查询当前用户信息，保留原有字段
+        # 先查询用户信息（用于显示）
         user_resp = self._get(f"/api/user/{user_id}")
-        if not user_resp.get("success"):
-            return f"❌ 查询用户失败: {user_resp.get('message')}"
-        u = user_resp["data"]
-        old_group = u.get("group", "default")
-        # 带上所有字段一起更新，避免清空
-        update_data = {
-            "id": user_id,
-            "username": u.get("username", ""),
-            "display_name": u.get("display_name", ""),
-            "group": group_name,
-            "remark": u.get("remark", ""),
-        }
-        resp = self._put("/api/user/", update_data)
+        username = "?"
+        old_group = "default"
+        if user_resp.get("success"):
+            username = user_resp["data"].get("username", "?")
+            old_group = user_resp["data"].get("group", "default")
+
+        # 使用 PATCH 接口只更新分组，不影响其他字段
+        resp = self._patch(f"/api/user/{user_id}/group", {"group": group_name})
         if resp.get("success"):
-            return f"✅ 已将用户 #{user_id} ({u.get('username', '?')}) 的分组从「{old_group}」修改为「{group_name}」"
+            return f"✅ 已将用户 #{user_id} ({username}) 的分组从「{old_group}」修改为「{group_name}」"
         return f"❌ 修改失败: {resp.get('message')}"
 
     # ═══════════════════════════════════════════════════════════
@@ -448,26 +474,21 @@ class NewAPIAdmin(Star):
             yield event.plain_result(f"❌ user_id={user_id} 看起来不像 NewAPI 用户 ID。\n请用 nsearch <用户名> 搜索获取正确的 ID。")
             return
 
-        # 先查询当前用户信息，保留原有字段
+        # 先查询用户信息（用于显示）
         user_resp = self._get(f"/api/user/{user_id}")
-        if not user_resp.get("success"):
-            yield event.plain_result(f"❌ 查询用户失败: {user_resp.get('message')}")
-            return
-        u = user_resp["data"]
-        old_group = u.get("group", "default")
-        update_data = {
-            "id": user_id,
-            "username": u.get("username", ""),
-            "display_name": u.get("display_name", ""),
-            "group": group_name,
-            "remark": u.get("remark", ""),
-        }
-        resp = self._put("/api/user/", update_data)
+        username = "?"
+        old_group = "default"
+        if user_resp.get("success"):
+            username = user_resp["data"].get("username", "?")
+            old_group = user_resp["data"].get("group", "default")
+
+        # 使用 PATCH 接口只更新分组，不影响其他字段
+        resp = self._patch(f"/api/user/{user_id}/group", {"group": group_name})
         if resp.get("success"):
             yield event.plain_result(
                 f"✅ 分组修改成功\n"
                 f"━━━━━━━━━━━━━━━━\n"
-                f"👤 用户: {u.get('username', '?')} (ID: {user_id})\n"
+                f"👤 用户: {username} (ID: {user_id})\n"
                 f"🏷 旧分组: {old_group}\n"
                 f"🏷 新分组: {group_name}"
             )
