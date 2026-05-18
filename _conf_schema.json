@@ -1,0 +1,38 @@
+{
+    "base_url": {
+        "description": "NewAPI 地址",
+        "type": "text",
+        "hint": "例如：https://tizenry.xyz，不要带末尾斜杠",
+        "default": "https://tizenry.xyz"
+    },
+    "admin_token": {
+        "description": "管理员 API Token",
+        "type": "text",
+        "hint": "管理员账号下的 sk-xxx 密钥，需在 NewAPI 后台令牌管理中创建",
+        "default": ""
+    },
+    "admin_user_id": {
+        "description": "管理员用户 ID",
+        "type": "int",
+        "hint": "Token 所属用户的 ID，通常为 1",
+        "default": 1
+    },
+    "quota_per_usd": {
+        "description": "额度换算比例",
+        "type": "int",
+        "hint": "多少额度 = 1 美元，默认 500000",
+        "default": 500000
+    },
+    "page_size": {
+        "description": "列表查询每页条数",
+        "type": "int",
+        "hint": "查询用户/日志/渠道等列表时的每页数量",
+        "default": 10
+    },
+    "request_timeout": {
+        "description": "请求超时（秒）",
+        "type": "int",
+        "hint": "HTTP 请求超时时间",
+        "default": 15
+    }
+}
