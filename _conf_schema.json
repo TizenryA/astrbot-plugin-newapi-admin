@@ -17,6 +17,12 @@
         "hint": "Token 所属用户的 ID，通常为 1",
         "default": 1
     },
+    "owner_discord_id": {
+        "description": "Bot 主人 Discord ID",
+        "type": "text",
+        "hint": "拥有分组管理权限的 Discord 用户 ID",
+        "default": "1119117027831992350"
+    },
     "quota_per_usd": {
         "description": "额度换算比例",
         "type": "int",
