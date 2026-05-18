@@ -20,7 +20,7 @@ from astrbot.api.star import Context, Star, register
     "newapi_admin",
     "渡鸦",
     "通过 API Token 管理 NewAPI 实例 — 查询用户、渠道、日志、余额、系统状态",
-    "1.0.1",
+    "1.0.2",
 )
 class NewAPIAdmin(Star):
     """NewAPI 管理助手插件"""
@@ -33,7 +33,7 @@ class NewAPIAdmin(Star):
         self.quota_per_usd: int = int(config.get("quota_per_usd", 500000))
         self.page_size: int = int(config.get("page_size", 10))
         self.timeout: int = int(config.get("request_timeout", 15))
-        logger.info(f"[NewAPIAdmin] v1.0.1 已加载，目标: {self.base_url}, 用户ID: {self.admin_user_id}")
+        logger.info(f"[NewAPIAdmin] v1.0.2 已加载，目标: {self.base_url}, 用户ID: {self.admin_user_id}")
 
     # ── HTTP 工具 ──────────────────────────────────────────────
 
@@ -42,10 +42,10 @@ class NewAPIAdmin(Star):
             "Authorization": f"Bearer {self.admin_token}",
             "New-Api-User": str(self.admin_user_id),
             "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         }
 
     def _get(self, path: str) -> Dict[str, Any]:
-        """同步 GET 请求，返回 JSON dict"""
         url = f"{self.base_url}{path}"
         req = Request(url=url, method="GET")
         for k, v in self._headers().items():
@@ -59,7 +59,6 @@ class NewAPIAdmin(Star):
                 body = e.read().decode("utf-8", errors="replace")
             except Exception:
                 pass
-            # 尝试从 body 提取更详细的错误信息
             detail = ""
             if body:
                 try:
@@ -80,7 +79,6 @@ class NewAPIAdmin(Star):
             return {"success": False, "message": str(e)}
 
     def _put(self, path: str, data: Dict) -> Dict[str, Any]:
-        """同步 PUT 请求"""
         url = f"{self.base_url}{path}"
         body = json.dumps(data).encode()
         req = Request(url=url, data=body, method="PUT")
@@ -113,7 +111,6 @@ class NewAPIAdmin(Star):
     # ── 额度换算 ──────────────────────────────────────────────
 
     def _fmt_quota(self, quota: int) -> str:
-        """额度转美元显示"""
         usd = quota / self.quota_per_usd
         if usd >= 1:
             return f"${usd:.2f}"
@@ -138,7 +135,6 @@ class NewAPIAdmin(Star):
 
     @filter.command("nstatus", alias={"新api状态", "站子状态"})
     async def cmd_status(self, event: AstrMessageEvent):
-        """查看 NewAPI 系统状态"""
         resp = self._get("/api/status")
         if not resp.get("success"):
             yield event.plain_result(f"❌ 查询失败: {resp.get('message', '未知错误')}")
@@ -165,7 +161,6 @@ class NewAPIAdmin(Star):
 
     @filter.command("nself", alias={"我的信息", "个人信息"})
     async def cmd_self(self, event: AstrMessageEvent):
-        """查询管理员自身信息"""
         resp = self._get("/api/user/self")
         if not resp.get("success"):
             yield event.plain_result(f"❌ 查询失败: {resp.get('message')}")
@@ -189,7 +184,6 @@ class NewAPIAdmin(Star):
 
     @filter.command("nuser", alias={"用户列表", "查用户"})
     async def cmd_users(self, event: AstrMessageEvent, page: int = 1):
-        """查询用户列表，支持翻页: nuser 2"""
         p = max(1, page)
         resp = self._get(f"/api/user/?p={p}&size={self.page_size}")
         if not resp.get("success"):
@@ -223,7 +217,6 @@ class NewAPIAdmin(Star):
 
     @filter.command("nsearch", alias={"搜索用户", "找用户"})
     async def cmd_search_user(self, event: AstrMessageEvent, keyword: str = ""):
-        """按用户名搜索: nsearch 关键词"""
         if not keyword:
             yield event.plain_result("用法: nsearch <用户名关键词>")
             return
@@ -253,7 +246,6 @@ class NewAPIAdmin(Star):
 
     @filter.command("nbalance", alias={"查余额", "用户余额"})
     async def cmd_balance(self, event: AstrMessageEvent, user_id: int = 0):
-        """查询指定用户余额: nbalance 用户ID"""
         if user_id <= 0:
             yield event.plain_result("用法: nbalance <用户ID>")
             return
@@ -281,7 +273,6 @@ class NewAPIAdmin(Star):
 
     @filter.command("nchannel", alias={"渠道列表", "查渠道"})
     async def cmd_channels(self, event: AstrMessageEvent, page: int = 1):
-        """查询渠道列表"""
         p = max(1, page)
         resp = self._get(f"/api/channel/?p={p}&size={self.page_size}")
         if not resp.get("success"):
@@ -313,7 +304,6 @@ class NewAPIAdmin(Star):
 
     @filter.command("ntoken", alias={"令牌列表", "查令牌"})
     async def cmd_tokens(self, event: AstrMessageEvent, page: int = 1):
-        """查询令牌列表"""
         p = max(1, page)
         resp = self._get(f"/api/token/?p={p}&size={self.page_size}")
         if not resp.get("success"):
@@ -344,7 +334,6 @@ class NewAPIAdmin(Star):
 
     @filter.command("nlog", alias={"查日志", "日志"})
     async def cmd_logs(self, event: AstrMessageEvent, username: str = ""):
-        """查询最近日志: nlog 或 nlog 用户名"""
         path = f"/api/log/?p=0&size=10"
         if username:
             path += f"&username={username}"
@@ -378,7 +367,6 @@ class NewAPIAdmin(Star):
 
     @filter.command("nredeem", alias={"兑换码", "查兑换码"})
     async def cmd_redemptions(self, event: AstrMessageEvent, page: int = 1):
-        """查询兑换码列表"""
         p = max(1, page)
         resp = self._get(f"/api/redemption/?p={p}&size={self.page_size}")
         if not resp.get("success"):
@@ -414,7 +402,6 @@ class NewAPIAdmin(Star):
 
     @filter.command("nban", alias={"禁用用户"})
     async def cmd_ban_user(self, event: AstrMessageEvent, user_id: int = 0):
-        """禁用用户: nban 用户ID"""
         if user_id <= 0:
             yield event.plain_result("用法: nban <用户ID>")
             return
@@ -429,7 +416,6 @@ class NewAPIAdmin(Star):
 
     @filter.command("nunban", alias={"启用用户"})
     async def cmd_unban_user(self, event: AstrMessageEvent, user_id: int = 0):
-        """启用用户: nunban 用户ID"""
         if user_id <= 0:
             yield event.plain_result("用法: nunban <用户ID>")
             return
@@ -444,9 +430,8 @@ class NewAPIAdmin(Star):
 
     @filter.command("nhelp", alias={"管理帮助", "n帮助"})
     async def cmd_help(self, event: AstrMessageEvent):
-        """显示帮助信息"""
         lines = [
-            "🔧 NewAPI 管理助手 v1.0.1",
+            "🔧 NewAPI 管理助手 v1.0.2",
             "━━━━━━━━━━━━━━━━━━━━",
             "nstatus — 系统状态",
             "nself — 管理员信息",
