@@ -174,10 +174,10 @@ class NewAPIAdmin(Star):
 
     @filter.llm_tool(name="newapi_user_info")
     async def tool_user_info(self, event: AstrMessageEvent, user_id: int):
-        '''查询指定用户的详细信息，包括余额、已用额度、请求数、状态等。
+        '''查询指定用户的详细信息。注意：user_id 是 NewAPI 系统内部的数字 ID（如 1, 2, 3），不是 Discord ID 或其他平台 ID。如果不确定用户的 NewAPI ID，请先用 newapi_search_user 通过用户名搜索。
 
         Args:
-            user_id(int): 用户 ID
+            user_id(int): NewAPI 系统内部用户 ID（数字，如 1, 2, 3），不是 Discord ID
         '''
         resp = self._get(f"/api/user/{user_id}")
         if not resp.get("success"):
@@ -197,10 +197,10 @@ class NewAPIAdmin(Star):
 
     @filter.llm_tool(name="newapi_search_user")
     async def tool_search_user(self, event: AstrMessageEvent, keyword: str):
-        '''按用户名关键词搜索用户。
+        '''按用户名关键词搜索 NewAPI 用户。返回结果包含用户的 NewAPI ID（#数字），后续操作请使用这个 ID。注意：不要用 Discord ID 搜索，这里只接受用户名关键词。
 
         Args:
-            keyword(string): 搜索关键词
+            keyword(string): 用户名关键词（如 "tizenry", "dadongbei"），不要传入 Discord ID
         '''
         resp = self._get(f"/api/user/search?keyword={keyword}&p=0&size=10")
         if not resp.get("success"):
@@ -221,7 +221,7 @@ class NewAPIAdmin(Star):
 
     @filter.llm_tool(name="newapi_user_list")
     async def tool_user_list(self, event: AstrMessageEvent, page: int):
-        '''查询用户列表，支持翻页。
+        '''查询 NewAPI 用户列表。返回的 #数字 即为用户的 NewAPI ID，后续操作（如改分组、查余额）请使用这个 ID。
 
         Args:
             page(int): 页码，从 1 开始
@@ -335,10 +335,10 @@ class NewAPIAdmin(Star):
 
     @filter.llm_tool(name="newapi_set_user_group")
     async def tool_set_group(self, event: AstrMessageEvent, user_id: int, group_name: str):
-        '''修改指定用户的分组。仅限 bot 主人使用。
+        '''修改指定用户的分组。仅限 bot 主人使用。注意：user_id 是 NewAPI 系统内部的数字 ID（如 1, 2, 3），不是 Discord ID。如果不确定 ID，请先用 newapi_search_user 搜索。
 
         Args:
-            user_id(int): 要修改的用户 ID
+            user_id(int): NewAPI 系统内部用户 ID（数字，如 1, 2, 3），不是 Discord ID
             group_name(string): 分组名称，如 default, vip, svip, 雏鸟 等
         '''
         # 权限检查
