@@ -22,7 +22,7 @@ from astrbot.api.star import Context, Star, register
     "newapi_admin",
     "渡鸦",
     "通过 API Token 管理 NewAPI 实例 — LLM 工具调用 + 分组管理",
-    "1.2.1",
+    "1.2.2",
 )
 class NewAPIAdmin(Star):
     """NewAPI 管理助手插件"""
@@ -411,14 +411,23 @@ class NewAPIAdmin(Star):
         if user_id > 10000:
             return f"❌ user_id={user_id} 不是有效的 NewAPI 用户 ID。你可能拿到了 Discord ID，请使用 newapi_resolve_discord_user 工具先解析。"
 
-        resp = self._put("/api/user/", {"id": user_id, "group": group_name})
+        # 先查询当前用户信息，保留原有字段
+        user_resp = self._get(f"/api/user/{user_id}")
+        if not user_resp.get("success"):
+            return f"❌ 查询用户失败: {user_resp.get('message')}"
+        u = user_resp["data"]
+        old_group = u.get("group", "default")
+        # 带上所有字段一起更新，避免清空
+        update_data = {
+            "id": user_id,
+            "username": u.get("username", ""),
+            "display_name": u.get("display_name", ""),
+            "group": group_name,
+            "remark": u.get("remark", ""),
+        }
+        resp = self._put("/api/user/", update_data)
         if resp.get("success"):
-            # 查询用户信息确认
-            user_resp = self._get(f"/api/user/{user_id}")
-            username = "?"
-            if user_resp.get("success"):
-                username = user_resp["data"].get("username", "?")
-            return f"✅ 已将用户 #{user_id} ({username}) 的分组修改为「{group_name}」"
+            return f"✅ 已将用户 #{user_id} ({u.get('username', '?')}) 的分组从「{old_group}」修改为「{group_name}」"
         return f"❌ 修改失败: {resp.get('message')}"
 
     # ═══════════════════════════════════════════════════════════
@@ -439,16 +448,27 @@ class NewAPIAdmin(Star):
             yield event.plain_result(f"❌ user_id={user_id} 看起来不像 NewAPI 用户 ID。\n请用 nsearch <用户名> 搜索获取正确的 ID。")
             return
 
-        resp = self._put("/api/user/", {"id": user_id, "group": group_name})
+        # 先查询当前用户信息，保留原有字段
+        user_resp = self._get(f"/api/user/{user_id}")
+        if not user_resp.get("success"):
+            yield event.plain_result(f"❌ 查询用户失败: {user_resp.get('message')}")
+            return
+        u = user_resp["data"]
+        old_group = u.get("group", "default")
+        update_data = {
+            "id": user_id,
+            "username": u.get("username", ""),
+            "display_name": u.get("display_name", ""),
+            "group": group_name,
+            "remark": u.get("remark", ""),
+        }
+        resp = self._put("/api/user/", update_data)
         if resp.get("success"):
-            user_resp = self._get(f"/api/user/{user_id}")
-            username = "?"
-            if user_resp.get("success"):
-                username = user_resp["data"].get("username", "?")
             yield event.plain_result(
                 f"✅ 分组修改成功\n"
                 f"━━━━━━━━━━━━━━━━\n"
-                f"👤 用户: {username} (ID: {user_id})\n"
+                f"👤 用户: {u.get('username', '?')} (ID: {user_id})\n"
+                f"🏷 旧分组: {old_group}\n"
                 f"🏷 新分组: {group_name}"
             )
         else:
