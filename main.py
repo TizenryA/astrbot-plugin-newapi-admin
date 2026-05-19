@@ -22,7 +22,7 @@ from astrbot.api.star import Context, Star, register
     "newapi_admin",
     "渡鸦",
     "通过 API Token 管理 NewAPI 实例 — LLM 工具调用 + 分组管理",
-    "1.4.1",
+    "1.4.2",
 )
 class NewAPIAdmin(Star):
     """NewAPI 管理助手插件"""
@@ -521,16 +521,8 @@ class NewAPIAdmin(Star):
                 return f"分组「{group_name}」不存在。可用分组: {', '.join(available)}"
             group_name = matched
 
-        # 验证分组是否存在
-        available = self._get_available_groups()
-        if available:
-            matched = self._find_closest_group(group_name, available)
-            if matched != group_name:
-                yield event.plain_result(f"❌ 分组「{group_name}」不存在，最接近的是「{matched}」\n可用分组: {', '.join(available)}")
-                return
-            if group_name not in available:
-                yield event.plain_result(f"❌ 分组「{group_name}」不存在\n可用分组: {', '.join(available)}")
-                return
+        # 验证分组是否存在（第二重检查）
+        # (已在上方验证，此处跳过)
 
         # 使用 PATCH 接口只更新分组，不影响其他字段
         resp = self._patch(f"/api/user/{user_id}/group", {"group": group_name})
@@ -624,16 +616,8 @@ class NewAPIAdmin(Star):
                 return f"分组「{group_name}」不存在。可用分组: {', '.join(available)}"
             group_name = matched
 
-        # 验证分组是否存在
-        available = self._get_available_groups()
-        if available:
-            matched = self._find_closest_group(group_name, available)
-            if matched != group_name:
-                yield event.plain_result(f"❌ 分组「{group_name}」不存在，最接近的是「{matched}」\n可用分组: {', '.join(available)}")
-                return
-            if group_name not in available:
-                yield event.plain_result(f"❌ 分组「{group_name}」不存在\n可用分组: {', '.join(available)}")
-                return
+        # 验证分组是否存在（第二重检查）
+        # (已在上方验证，此处跳过)
 
         # 使用 PATCH 接口只更新分组，不影响其他字段
         resp = self._patch(f"/api/user/{user_id}/group", {"group": group_name})
