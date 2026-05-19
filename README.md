@@ -18,10 +18,10 @@
 
 | 字段 | 说明 | 示例 |
 |------|------|------|
-| `base_url` | NewAPI 地址 | `https://tizenry.xyz` |
+| `base_url` | NewAPI 地址 | `https://your-newapi-domain.com` |
 | `admin_token` | 管理员 API Token | `sk-xxx` |
 | `admin_user_id` | 管理员用户 ID | `1` |
-| `owner_discord_id` | Bot 主人 Discord ID（分组/余额管理权限） | `1119117027831992350` |
+| `owner_discord_id` | Bot 主人 Discord ID（分组/余额管理权限） | `YOUR_DISCORD_ID` |
 | `quota_per_usd` | 额度/$ 换算 | `500000` |
 | `page_size` | 列表每页条数 | `10` |
 | `request_timeout` | 请求超时（秒） | `15` |

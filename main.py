@@ -29,14 +29,14 @@ class NewAPIAdmin(Star):
 
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
-        self.base_url: str = config.get("base_url", "https://tizenry.xyz").rstrip("/")
+        self.base_url: str = config.get("base_url", "").rstrip("/")
         self.admin_token: str = config.get("admin_token", "").strip()
         self.admin_user_id: int = int(config.get("admin_user_id", 1))
         self.quota_per_usd: int = int(config.get("quota_per_usd", 500000))
         self.page_size: int = int(config.get("page_size", 10))
         self.timeout: int = int(config.get("request_timeout", 15))
         # 仅允许此 Discord ID 使用分组管理
-        self.owner_discord_id: str = config.get("owner_discord_id", "1119117027831992350")
+        self.owner_discord_id: str = config.get("owner_discord_id", "")
         logger.info(f"[NewAPIAdmin] v1.1.0 已加载，目标: {self.base_url}")
 
     # ── 权限检查 ──────────────────────────────────────────────
